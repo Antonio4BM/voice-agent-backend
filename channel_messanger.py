@@ -59,14 +59,18 @@ async def fetch_chat_and_reply(
     transcript = peer_transcripts.get(pc_id, "").strip()
     logger.info("stop_audio signal [%s]; transcript length=%d", pc_id, len(transcript))
     try:
-        res = await async_requests_client.get(
+        async with async_requests_client.stream(
+            "GET",
             "http://chat-api:8000/chat",
             params={"message": transcript},
             timeout=CHAT_UPSTREAM_TIMEOUT,
-        )
-        chatbot_message = res.json()["message"]
-        logger.info("Chat reply [%s]: %s", pc_id, chatbot_message[:200])
-        send_chatbot_data_channel(dc, chatbot_message)
+        ) as res:
+            res.raise_for_status()
+
+            async for chunk in res.aiter_text():
+                if chunk:
+                    send_chatbot_data_channel(dc, chunk)
+
         peer_transcripts[pc_id] = ""
     except Exception:
         logger.exception("Chat fetch failed for session %s", pc_id)
