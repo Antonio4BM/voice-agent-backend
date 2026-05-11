@@ -5,7 +5,7 @@ import os
 
 from httpx import AsyncClient, Timeout
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger(__name__)
 
 # Upstream /chat may stream or block on LLMs; default read matches long generation.
 CHAT_UPSTREAM_READ_TIMEOUT = float(os.environ.get("CHAT_UPSTREAM_READ_TIMEOUT", "120"))
@@ -19,9 +19,9 @@ CHAT_UPSTREAM_TIMEOUT = Timeout(
 async_requests_client = AsyncClient()
 
 
-def send_chatbot_data_channel(dc, chatbot_message: str) -> None:
+def send_chatbot_data_channel(dc, chatbot_message: str, first_chunk: bool = False) -> None:
     """Send JSON to the browser over the negotiated RTCDataChannel."""
-    payload = json.dumps({"type": "chatbot_reply", "message": chatbot_message})
+    payload = json.dumps({"type": "agent_reply", "message": chatbot_message, "first_chunk": first_chunk})
     try:
         if getattr(dc, "readyState", None) == "open":
             dc.send(payload)
@@ -59,14 +59,21 @@ async def fetch_chat_and_reply(
     transcript = peer_transcripts.get(pc_id, "").strip()
     logger.info("stop_audio signal [%s]; transcript length=%d", pc_id, len(transcript))
     try:
-        res = await async_requests_client.get(
-            "http://localhost:8000/chat",
+        async with async_requests_client.stream(
+            "GET",
+            "http://chat-api:8000/chat",
             params={"message": transcript},
             timeout=CHAT_UPSTREAM_TIMEOUT,
-        )
-        chatbot_message = res.json()["message"]
-        logger.info("Chat reply [%s]: %s", pc_id, chatbot_message[:200])
-        send_chatbot_data_channel(dc, chatbot_message)
+        ) as res:
+            res.raise_for_status()
+
+            first_chunk = True
+
+            async for chunk in res.aiter_text():
+                if chunk:
+                    send_chatbot_data_channel(dc, chunk, first_chunk)
+                    first_chunk = False
+
         peer_transcripts[pc_id] = ""
     except Exception:
         logger.exception("Chat fetch failed for session %s", pc_id)
