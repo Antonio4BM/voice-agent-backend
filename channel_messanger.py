@@ -19,9 +19,9 @@ CHAT_UPSTREAM_TIMEOUT = Timeout(
 async_requests_client = AsyncClient()
 
 
-def send_chatbot_data_channel(dc, chatbot_message: str) -> None:
+def send_chatbot_data_channel(dc, chatbot_message: str, first_chunk: bool = False) -> None:
     """Send JSON to the browser over the negotiated RTCDataChannel."""
-    payload = json.dumps({"type": "chatbot_reply", "message": chatbot_message})
+    payload = json.dumps({"type": "agent_reply", "message": chatbot_message, "first_chunk": first_chunk})
     try:
         if getattr(dc, "readyState", None) == "open":
             dc.send(payload)
@@ -67,9 +67,12 @@ async def fetch_chat_and_reply(
         ) as res:
             res.raise_for_status()
 
+            first_chunk = True
+
             async for chunk in res.aiter_text():
                 if chunk:
-                    send_chatbot_data_channel(dc, chunk)
+                    send_chatbot_data_channel(dc, chunk, first_chunk)
+                    first_chunk = False
 
         peer_transcripts[pc_id] = ""
     except Exception:
