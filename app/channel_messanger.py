@@ -8,7 +8,7 @@ from httpx import AsyncClient, Timeout
 
 logger = logging.getLogger(__name__)
 
-voice = PiperVoice.load("en_US-kristin-medium.onnx")
+voice = PiperVoice.load(os.path.join("models", "en_US-kristin-medium.onnx"))
 
 # Upstream /chat may stream or block on LLMs; default read matches long generation.
 CHAT_UPSTREAM_READ_TIMEOUT = float(os.environ.get("CHAT_UPSTREAM_READ_TIMEOUT", "120"))

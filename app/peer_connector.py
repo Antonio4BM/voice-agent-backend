@@ -6,11 +6,11 @@ import json
 import vosk
 
 from typing import Tuple
-from transcriber import transcribe_audio_track
+from app.transcriber import transcribe_audio_track
 from aiortc.contrib.media import MediaRelay, MediaRecorder
 from aiortc import RTCPeerConnection
 
-from channel_messanger import fetch_chat_and_reply
+from app.channel_messanger import fetch_chat_and_reply
 
 relay = MediaRelay()
 RECORDINGS_DIR = "recordings"

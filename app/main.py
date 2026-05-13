@@ -26,7 +26,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
-from peer_connector import get_peer_connection
+from app.peer_connector import get_peer_connection
 
 RECORDINGS_DIR = "recordings"
 FRAME_RATE = 16000
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     os.makedirs(RECORDINGS_DIR, exist_ok=True)
     logger.info("Recordings directory ready: %s", RECORDINGS_DIR)
     global transcriber_model
-    transcriber_model = vosk.Model(model_name)
+    transcriber_model = vosk.Model(os.path.join("models", model_name))
     logger.info("Vosk model loaded")
     yield
     for pc in list(pcs):
