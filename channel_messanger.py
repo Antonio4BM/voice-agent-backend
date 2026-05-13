@@ -3,9 +3,12 @@ import logging
 import json
 import os
 
+from piper import PiperVoice
 from httpx import AsyncClient, Timeout
 
 logger = logging.getLogger(__name__)
+
+voice = PiperVoice.load("en_US-kristin-medium.onnx")
 
 # Upstream /chat may stream or block on LLMs; default read matches long generation.
 CHAT_UPSTREAM_READ_TIMEOUT = float(os.environ.get("CHAT_UPSTREAM_READ_TIMEOUT", "120"))
@@ -20,11 +23,22 @@ async_requests_client = AsyncClient()
 
 
 def send_chatbot_data_channel(dc, chatbot_message: str, first_chunk: bool = False) -> None:
-    """Send JSON to the browser over the negotiated RTCDataChannel."""
-    payload = json.dumps({"type": "agent_reply", "message": chatbot_message, "first_chunk": first_chunk})
+    """Send audio metadata as JSON and PCM chunks as bytes over the DataChannel."""
     try:
         if getattr(dc, "readyState", None) == "open":
-            dc.send(payload)
+            for chunk in voice.synthesize(chatbot_message):
+                if first_chunk:
+                    # send chunks metadata
+                    dc.send(
+                        json.dumps({
+                        "type": "audio_start",
+                        "sample_rate": chunk.sample_rate,
+                        "channels": chunk.sample_channels,
+                        "sample_width": chunk.sample_width
+                        })
+                    )
+                    first_chunk = False
+                dc.send(chunk.audio_int16_bytes)
             logger.info("Sent chatbot reply via DataChannel (%d chars)", len(chatbot_message))
         else:
             logger.warning(
@@ -42,7 +56,7 @@ async def fetch_chat_and_reply(
     peer_stt_flush_complete: dict[str, asyncio.Future],
     peer_transcripts: dict[str, str]
 ) -> None:
-    """GET chatbot answer from upstream service and send JSON reply on DataChannel."""
+    """GET sentence chunks from upstream chat and stream synthesized audio."""
     ev = peer_stt_flush_request.get(pc_id)
     if ev is not None and peer_stt_active.get(pc_id):
         loop = asyncio.get_running_loop()
@@ -69,10 +83,14 @@ async def fetch_chat_and_reply(
 
             first_chunk = True
 
-            async for chunk in res.aiter_text():
-                if chunk:
-                    send_chatbot_data_channel(dc, chunk, first_chunk)
+            # /chat streams one sentence per line, so synthesize each sentence once.
+            async for sentence in res.aiter_lines():
+                sentence = sentence.strip()
+                if sentence:
+                    send_chatbot_data_channel(dc, sentence, first_chunk)
                     first_chunk = False
+            if getattr(dc, "readyState", None) == "open":
+                dc.send(json.dumps({"type": "audio_end"}))
 
         peer_transcripts[pc_id] = ""
     except Exception:
