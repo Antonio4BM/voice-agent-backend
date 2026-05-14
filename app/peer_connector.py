@@ -13,7 +13,6 @@ from aiortc import RTCPeerConnection
 from app.channel_messanger import fetch_chat_and_reply
 
 relay = MediaRelay()
-RECORDINGS_DIR = "recordings"
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,8 @@ def get_peer_connection(
     peer_transcripts: dict[str, str], peer_stt_flush_request: dict[str, asyncio.Event],
     peer_stt_active: dict[str, bool], peer_stt_flush_complete: dict[str, asyncio.Future],
     pcs: set[RTCPeerConnection],
-    recordings_dir: str
+    recordings_dir: str,
+    chat_upstream_read_timeout: float
 ) -> Tuple[RTCPeerConnection, str]:
     # create a new peer connection and assign a unique ID
     pc = RTCPeerConnection()
@@ -158,6 +158,7 @@ def get_peer_connection(
                         peer_stt_active,
                         peer_stt_flush_complete,
                         peer_transcripts,
+                        chat_upstream_read_timeout,
                     )
                 )
                 return

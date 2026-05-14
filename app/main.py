@@ -3,10 +3,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from app.core.config import Settings
+settings = Settings()
+
 
 def _configure_logging() -> None:
     """Ensure app loggers (getLogger(__name__)) emit INFO when run via `uvicorn main:app` (no __main__ block)."""
-    level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+    level_name = settings.log_level
     level = getattr(logging, level_name, logging.INFO)
     root = logging.getLogger()
     root.setLevel(level)
@@ -28,10 +31,8 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 from app.peer_connector import get_peer_connection
 
-RECORDINGS_DIR = "recordings"
 FRAME_RATE = 16000
 transcriber_model = None
-model_name = "vosk-model-small-en-us-0.15"
 logger = logging.getLogger(__name__)
 
 pcs: set[RTCPeerConnection] = set()
@@ -46,10 +47,10 @@ peer_stt_active: dict[str, bool] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    os.makedirs(RECORDINGS_DIR, exist_ok=True)
-    logger.info("Recordings directory ready: %s", RECORDINGS_DIR)
+    os.makedirs(settings.recordings_dir, exist_ok=True)
+    logger.info("Recordings directory ready: %s", settings.recordings_dir)
     global transcriber_model
-    transcriber_model = vosk.Model(os.path.join("models", model_name))
+    transcriber_model = vosk.Model(os.path.join("models", settings.transcriber_model_name))
     logger.info("Vosk model loaded")
     yield
     for pc in list(pcs):
@@ -104,7 +105,8 @@ async def offer(request: Request):
         peer_stt_active,
         peer_stt_flush_complete,
         pcs,
-        RECORDINGS_DIR,
+        settings.recordings_dir,
+        settings.chat_upstream_read_timeout,
     )
     peer_stt_flush_request[pc_id] = asyncio.Event()
 

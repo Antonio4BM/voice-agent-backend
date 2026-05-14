@@ -10,15 +10,6 @@ logger = logging.getLogger(__name__)
 
 voice = PiperVoice.load(os.path.join("models", "en_US-kristin-medium.onnx"))
 
-# Upstream /chat may stream or block on LLMs; default read matches long generation.
-CHAT_UPSTREAM_READ_TIMEOUT = float(os.environ.get("CHAT_UPSTREAM_READ_TIMEOUT", "120"))
-CHAT_UPSTREAM_TIMEOUT = Timeout(
-    connect=10.0,
-    read=CHAT_UPSTREAM_READ_TIMEOUT,
-    write=10.0,
-    pool=10.0,
-)
-
 async_requests_client = AsyncClient()
 
 
@@ -54,7 +45,8 @@ async def fetch_chat_and_reply(
     peer_stt_flush_request: dict[str, asyncio.Event],
     peer_stt_active: dict[str, bool],
     peer_stt_flush_complete: dict[str, asyncio.Future],
-    peer_transcripts: dict[str, str]
+    peer_transcripts: dict[str, str],
+    chat_upstream_read_timeout: float
 ) -> None:
     """GET sentence chunks from upstream chat and stream synthesized audio."""
     ev = peer_stt_flush_request.get(pc_id)
@@ -72,6 +64,12 @@ async def fetch_chat_and_reply(
 
     transcript = peer_transcripts.get(pc_id, "").strip()
     logger.info("stop_audio signal [%s]; transcript length=%d", pc_id, len(transcript))
+    CHAT_UPSTREAM_TIMEOUT = Timeout(
+        connect=10.0,
+        read=chat_upstream_read_timeout,
+        write=10.0,
+        pool=10.0,
+    )
     try:
         async with async_requests_client.stream(
             "GET",
