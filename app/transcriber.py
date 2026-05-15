@@ -5,8 +5,6 @@ import vosk
 import contextlib
 
 from av import AudioResampler
-
-
 from aiortc.mediastreams import MediaStreamError
 
 logger = logging.getLogger(__name__)
