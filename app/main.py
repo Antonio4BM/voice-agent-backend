@@ -30,9 +30,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 from app.peer_connector import get_peer_connection
+from piper import PiperVoice
+from httpx import AsyncClient
+
+
 
 FRAME_RATE = 16000
 transcriber_model = None
+voice_model = None
+async_requests_client = None
 logger = logging.getLogger(__name__)
 
 pcs: set[RTCPeerConnection] = set()
@@ -52,7 +58,15 @@ async def lifespan(app: FastAPI):
     global transcriber_model
     transcriber_model = vosk.Model(os.path.join("models", settings.transcriber_model_name))
     logger.info("Vosk model loaded")
+    global voice_model
+    voice_model = PiperVoice.load(os.path.join("models", settings.voice_model_name))
+    logger.info("Piper voice model loaded")
+    global async_requests_client
+    async_requests_client = AsyncClient()
+    logger.info("Async requests client initialized")
     yield
+    await async_requests_client.aclose()
+    logger.info("Async requests client closed")
     for pc in list(pcs):
         rec = peer_recorders.get(pc)
         if rec:
@@ -96,6 +110,8 @@ async def offer(request: Request):
     offer = RTCSessionDescription(sdp=sdp, type=type)
     pc, pc_id, recorder = get_peer_connection(
         transcriber_model,
+        voice_model,
+        async_requests_client,
         FRAME_RATE,
         peer_data_channels,
         peer_recorders,
