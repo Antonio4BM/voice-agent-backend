@@ -9,4 +9,4 @@ venv/
 *.egg-info/
 .eggs/
 dist/
-build/
+models/

@@ -3,10 +3,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from app.core.config import Settings
+settings = Settings()
+
 
 def _configure_logging() -> None:
     """Ensure app loggers (getLogger(__name__)) emit INFO when run via `uvicorn main:app` (no __main__ block)."""
-    level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+    level_name = settings.log_level
     level = getattr(logging, level_name, logging.INFO)
     root = logging.getLogger()
     root.setLevel(level)
@@ -26,12 +29,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
-from peer_connector import get_peer_connection
+from app.peer_connector import get_peer_connection
+from piper import PiperVoice
+from httpx import AsyncClient
 
-RECORDINGS_DIR = "recordings"
+
+
 FRAME_RATE = 16000
 transcriber_model = None
-model_name = "vosk-model-small-en-us-0.15"
+voice_model = None
+async_requests_client = None
 logger = logging.getLogger(__name__)
 
 pcs: set[RTCPeerConnection] = set()
@@ -46,12 +53,20 @@ peer_stt_active: dict[str, bool] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    os.makedirs(RECORDINGS_DIR, exist_ok=True)
-    logger.info("Recordings directory ready: %s", RECORDINGS_DIR)
+    os.makedirs(settings.recordings_dir, exist_ok=True)
+    logger.info("Recordings directory ready: %s", settings.recordings_dir)
     global transcriber_model
-    transcriber_model = vosk.Model(model_name)
+    transcriber_model = vosk.Model(os.path.join("models", settings.transcriber_model_name))
     logger.info("Vosk model loaded")
+    global voice_model
+    voice_model = PiperVoice.load(os.path.join("models", settings.voice_model_name))
+    logger.info("Piper voice model loaded")
+    global async_requests_client
+    async_requests_client = AsyncClient()
+    logger.info("Async requests client initialized")
     yield
+    await async_requests_client.aclose()
+    logger.info("Async requests client closed")
     for pc in list(pcs):
         rec = peer_recorders.get(pc)
         if rec:
@@ -95,6 +110,8 @@ async def offer(request: Request):
     offer = RTCSessionDescription(sdp=sdp, type=type)
     pc, pc_id, recorder = get_peer_connection(
         transcriber_model,
+        voice_model,
+        async_requests_client,
         FRAME_RATE,
         peer_data_channels,
         peer_recorders,
@@ -104,7 +121,8 @@ async def offer(request: Request):
         peer_stt_active,
         peer_stt_flush_complete,
         pcs,
-        RECORDINGS_DIR,
+        settings.recordings_dir,
+        settings.chat_upstream_read_timeout,
     )
     peer_stt_flush_request[pc_id] = asyncio.Event()
 

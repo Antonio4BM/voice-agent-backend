@@ -6,19 +6,21 @@ import json
 import vosk
 
 from typing import Tuple
-from transcriber import transcribe_audio_track
+from app.transcriber import transcribe_audio_track
 from aiortc.contrib.media import MediaRelay, MediaRecorder
 from aiortc import RTCPeerConnection
+from httpx import AsyncClient
 
-from channel_messanger import fetch_chat_and_reply
+from app.channel_messanger import fetch_chat_and_reply
 
 relay = MediaRelay()
-RECORDINGS_DIR = "recordings"
 
 logger = logging.getLogger(__name__)
 
 def get_peer_connection(
     transcriber_model: vosk.Model,
+    voice_model,
+    async_requests_client: AsyncClient,
     frame_rate: int,
     peer_data_channels: dict[RTCPeerConnection, object],
     peer_recorders: dict[RTCPeerConnection, MediaRecorder],
@@ -26,7 +28,8 @@ def get_peer_connection(
     peer_transcripts: dict[str, str], peer_stt_flush_request: dict[str, asyncio.Event],
     peer_stt_active: dict[str, bool], peer_stt_flush_complete: dict[str, asyncio.Future],
     pcs: set[RTCPeerConnection],
-    recordings_dir: str
+    recordings_dir: str,
+    chat_upstream_read_timeout: float
 ) -> Tuple[RTCPeerConnection, str]:
     # create a new peer connection and assign a unique ID
     pc = RTCPeerConnection()
@@ -154,10 +157,13 @@ def get_peer_connection(
                     fetch_chat_and_reply(
                         pc_id,
                         channel,
+                        voice_model,
+                        async_requests_client,
                         peer_stt_flush_request,
                         peer_stt_active,
                         peer_stt_flush_complete,
                         peer_transcripts,
+                        chat_upstream_read_timeout,
                     )
                 )
                 return
